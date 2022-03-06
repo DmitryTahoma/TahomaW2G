@@ -1,33 +1,26 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
-using System.Threading;
 
 namespace ServerCore
 {
-    public delegate void MessageAction(string message);
-
     public class Server
     {
-        event MessageAction OnMessageAdded;
+        private readonly TcpListener listener;
+        private readonly IPAddress ip;
+        private readonly int port;
 
-        TcpListener listener;
-        ICommands commands;
-        bool listen;
+        private readonly List<ClientObject> clients;
+        private readonly List<ClientObject> newClients;
+        private readonly List<ClientObject> disconnectedClients;
+        private readonly object newClientsLocker;
 
-        IPAddress ip;
-        int port;
-
-        List<ClientObject> clients;
-        List<ClientObject> newClients;
-        List<ClientObject> disconnectedClients;
-        object newClientsLocker;
-
-        public bool IsStarted { private set; get; }
+        private readonly ICommands commands;
 
         public Server(ICommands commands, IPAddress ip, int port)
         {
-            this.commands = commands;
+            listener = new TcpListener(ip, port);
             this.ip = ip;
             this.port = port;
 
@@ -35,9 +28,15 @@ namespace ServerCore
             newClients = new List<ClientObject>();
             disconnectedClients = new List<ClientObject>();
             newClientsLocker = new object();
+
+            this.commands = commands;
+
+            IsStarted = false;
         }
 
         public Server(ICommands commands, string ip, int port) : this(commands, IPAddress.Parse(ip), port) { }
+
+        public bool IsStarted { private set; get; }
 
         public void Listenning()
         {
@@ -45,50 +44,45 @@ namespace ServerCore
                 return;
 
             if (commands == null)
-                OnMessageAdded?.Invoke("Commands slot is void");
+                Console.WriteLine("Commands is null");
             try
             {
-                listener = new TcpListener(ip, port);
                 listener.Start();
-                OnMessageAdded?.Invoke("Server started " + ip.ToString() + ":" + port.ToString());
-
-                listen = true;
                 IsStarted = true;
-                while (listen)
+
+                Console.WriteLine("Server started " + ip.ToString() + ":" + port.ToString());
+
+                while (IsStarted)
                 {
-                    TcpClient client = null;
                     try
                     {
-                        client = listener.AcceptTcpClient();
+                        TcpClient client = listener.AcceptTcpClient();
+                        ClientObject clientObj = new ClientObject(client, commands);
+
                         lock (newClientsLocker)
                         {
-                            newClients.Add(new ClientObject(client, commands));
+                            newClients.Add(clientObj);
                         }
-                        //Thread clientThread = new Thread(new ThreadStart(() =>
-                        //{
-                        //    OnMessageAdded?.Invoke(clientObject.Process(1000));
-                        //}));
-                        //clientThread.Start();
+
+                        Console.WriteLine("Connect " + client.Client.RemoteEndPoint.ToString());
                     }
-                    catch (SocketException) { }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine("Listenning exception\n" + e.ToString());
+                    }
                 }
             }
             finally
             {
-                if (listener != null)
-                    listener.Stop();
+                listener.Stop();
             }
         }
 
         public void Update()
         {
             foreach (ClientObject client in clients)
-            {
-                if (client.NeedUpdate)
-                {
-                    OnMessageAdded?.Invoke(client.Process(1000));
-                }
-            }
+                if (client.HaveMessage)
+                    client.Update();
 
             AddNewClients();
             RemoveDisconnectedClients();
@@ -106,32 +100,16 @@ namespace ServerCore
         private void RemoveDisconnectedClients()
         {
             foreach (ClientObject client in clients)
-            {
                 if (!client.IsEnable)
-                {
                     disconnectedClients.Add(client);
-                }
-            }
+
             foreach (ClientObject client in disconnectedClients)
             {
                 clients.Remove(client);
                 client.CloseConnection();
             }
+
             disconnectedClients.Clear();
-        }
-
-        public void Stop()
-        {
-            IsStarted = false;
-            listen = false;
-            Thread.Sleep(1000);
-            if (listener != null)
-                listener.Stop();
-        }
-
-        public void AddMessageHandle(MessageAction action)
-        {
-            OnMessageAdded += action;
         }
     }
 }

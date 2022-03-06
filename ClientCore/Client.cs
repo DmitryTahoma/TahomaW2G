@@ -6,37 +6,45 @@ using System.Threading;
 
 namespace ClientCore
 {
+    public delegate void MessageHandler(string message);
+
     public class Client
     {
-        TcpClient client;
+        private TcpClient client;
+        private readonly IPAddress ip;
+        private readonly int port;
 
-        IPAddress ip;
-        int port;
-        Thread listeningResponse;
+        private Thread listeningResponse;
+
+        public event MessageHandler OnGettingMessage;
 
         public Client(IPAddress ip, int port)
         {
+            client = new TcpClient();
             this.ip = ip;
             this.port = port;
-            client = new TcpClient();
 
+            InitListeningThread();
+
+            Connected = false;
+        }
+
+        public Client(string ip, int port) : this(IPAddress.Parse(ip), port) { }
+
+        public bool Connected { private set; get; }
+
+        private void InitListeningThread()
+        {
             listeningResponse = new Thread(() =>
             {
-                while (client.Connected)
+                while (Connected)
                 {
-                    string msg = "";
                     try
                     {
-                        msg = ListeningResponse();
+                        string msg = ListeningResponse();
 
-                        if(msg != "bb")
-                        {
+                        if (msg != ClientConfig.CloseConnectionCommand)
                             OnGettingMessage?.Invoke(msg);
-                        }
-                        else
-                        {
-                            Console.WriteLine("Reconnect");
-                        }
                     }
                     catch (Exception e)
                     {
@@ -46,31 +54,31 @@ namespace ClientCore
             });
         }
 
-        public Client(string ip, int port) : this(IPAddress.Parse(ip), port) { }
-
-        public delegate void MessageHandler(string message);
-        public event MessageHandler OnGettingMessage;
-
         public void Connect()
         {
             client.Connect(ip, port);
+            Connected = true;
+        }
+
+        public void Reconnect()
+        {
+            client.Dispose();
+            Connected = false;
+
+            client = new TcpClient();
+            Connect();
         }
 
         public void StartListenningResponse()
         {
-            if (client.Connected)
-            {
+            if (Connected && !listeningResponse.IsAlive)
                 listeningResponse.Start();
-            }
         }
 
         public void Send(string message)
         {
             byte[] data = Encoding.Unicode.GetBytes(message);
-
             client.GetStream().Write(data, 0, data.Length);
-
-            //return ListenResponse();
         }
 
         public void SendCommand(string command, string[] args)
@@ -81,7 +89,7 @@ namespace ClientCore
             string message = command;
 
             for (int i = 0; i < args.Length; ++i)
-                message += "|" + args[i];
+                message += ClientConfig.CommandArgsSplitter + args[i];
 
             Send(message);
         }
@@ -89,41 +97,39 @@ namespace ClientCore
         private string ListeningResponse()
         {
             NetworkStream stream = client.GetStream();
+            WaitData(stream);
 
-            //DateTime start = DateTime.Now;
-            while (!stream.DataAvailable && client.Connected)
-            {
-                Thread.Sleep(10);
-            }
-
-            if (!client.Connected)
-            {
-                throw new Exception();
-            }
-
-            byte[] data = new byte[64];
-
+            byte[] data = new byte[ClientConfig.DataReadPacketSize];
             StringBuilder builder = new StringBuilder();
-            int bytes = 0;
             do
             {
-                bytes = stream.Read(data, 0, data.Length);
+                int bytes = stream.Read(data, 0, data.Length);
                 builder.Append(Encoding.Unicode.GetString(data, 0, bytes));
             }
             while (stream.DataAvailable);
 
             string res = builder.ToString();
+            ExecuteInnerCommands(res);
+            return res;
+        }
 
-            if(res == "bb")
+        private void WaitData(NetworkStream stream)
+        {
+            while (!stream.DataAvailable && Connected)
             {
-                client.Close();
-                client.Dispose();
-                client = new TcpClient();
-
-                Connect();
+                Thread.Sleep(ClientConfig.WaitDataDelay);
             }
 
-            return res;
+            if (!Connected)
+            {
+                throw new Exception("Lost connection to the server");
+            }
+        }
+
+        private void ExecuteInnerCommands(string command)
+        {
+            if (command == ClientConfig.CloseConnectionCommand)
+                Reconnect();
         }
     }
 }

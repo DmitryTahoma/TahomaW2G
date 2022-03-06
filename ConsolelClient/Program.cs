@@ -10,9 +10,9 @@ namespace ConsolelClient
         {
             Client client = new Client("192.168.0.168", 4210);
             bool gettedRequest = true;
-            client.OnGettingMessage += (string request) => 
+            client.OnGettingMessage += (string response) => 
             {
-                Console.WriteLine("Request:\n" + request + "\n");
+                Console.WriteLine("Response:\n" + response + "\n");
                 gettedRequest = true;
             };
             client.Connect();

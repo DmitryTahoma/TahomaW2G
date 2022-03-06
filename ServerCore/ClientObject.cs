@@ -2,129 +2,109 @@
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
 
 namespace ServerCore
 {
     class ClientObject
     {
-        TcpClient client;
-        ICommands commands;
-        DateTime timeStart;
+        private readonly TcpClient client;
+        private readonly ICommands commands;
+        private readonly DateTime timeStart;
+        private bool connected;
 
         public ClientObject(TcpClient client, ICommands commands)
         {
             this.client = client;
             this.commands = commands;
             timeStart = DateTime.Now;
-
-            Console.WriteLine("Connect " + client.Client.RemoteEndPoint.ToString());
+            connected = true;
         }
 
-        public bool NeedUpdate
+        public bool HaveMessage => client.GetStream().DataAvailable;
+
+        public bool IsEnable => connected && (DateTime.Now - timeStart).TotalSeconds < ServerConfig.ClientSecondsLifetime;
+
+        public void Update()
         {
-            get
+            NetworkStream stream = client.GetStream();
+            string message = ReadData(stream);
+            string response;
+
+            if (commands != null)
             {
-                return client.GetStream().DataAvailable;
-            }
-        }
+                ParseMessage(message, out string command, out string[] args);
 
-        public bool IsEnable
-        {
-            get
-            {
-                return (DateTime.Now - timeStart).TotalSeconds < 10;
-            }
-        }
-
-        public string Process(int delay)
-        {
-            string result = "some client been a handled";
-            NetworkStream stream = null;
-            try
-            {
-                stream = client.GetStream();
-                byte[] data = new byte[64];
-
-                StringBuilder builder = new StringBuilder();
-                int bytes = 0;
-                while (stream.DataAvailable)
+                try
                 {
-                    bytes = stream.Read(data, 0, data.Length);
-                    builder.Append(Encoding.Unicode.GetString(data, 0, bytes));
+                    response = commands.ExecuteCommand(command, args);
                 }
-
-                string message = builder.ToString();
-                string[] query = message.Split(new char[] { '|' });
-
-                string[] queryArgs = null;
-                if (query.Length > 1)
+                catch (Exception e)
                 {
-                    queryArgs = new string[query.Length - 1];
-                    for (int i = 0; i < queryArgs.Length; ++i)
-                        queryArgs[i] = query[i + 1];
+                    response = "Commands Fail:\n" + e.ToString();
                 }
-
-                if (commands != null)
-                {
-                    try
-                    {
-                        message = commands.ExecuteCommand(query[0], queryArgs);
-                    }
-                    catch
-                    {
-                        message = "crash commands";
-                    }
-                }
-                else
-                    message = "c0";
-
-                result = "\n----------------------------------------\nCLIENT-T-" + Thread.CurrentThread.ManagedThreadId.ToString() + " REQUEST: " + query[0] + " RESPONSE: " + message + "\n----------------------------------------\n";
-
-                byte[] response = Encoding.Unicode.GetBytes(message);
-
-                DateTime start = DateTime.Now;
-                bool isSended = false;
-                while (!isSended && (DateTime.Now - start).TotalMilliseconds < delay)
-                {
-                    try
-                    {
-                        client.GetStream().Write(response, 0, response.Length);
-                        isSended = true;
-                    }
-                    catch (SocketException)
-                    {
-                        Thread.Sleep(100);
-                    }
-                }
-                if (!isSended)
-                    result = "CLIENT-T-" + Thread.CurrentThread.ManagedThreadId.ToString() + " didn't respond";
             }
-            finally
-            {
-                //if (stream != null)
-                //    stream.Close();
-                //if (client != null)
-                //    client.Close();
-            }
-            return result;
+            else
+                response = "Commands is null";
+
+            SendResponse(response);
+
+            Console.WriteLine("----------------------------------------");
+            Console.WriteLine("REQUEST: " + message);
+            Console.WriteLine("RESPONSE: " + response);
+            Console.WriteLine("----------------------------------------");
         }
 
         public void CloseConnection()
         {
             Console.WriteLine("Connect Close " + client.Client.RemoteEndPoint.ToString());
 
+            SendResponse(ServerConfig.CloseConnectionCommand);
+            client.Dispose();
+        }
+
+        private string ReadData(NetworkStream stream)
+        {
+            byte[] data = new byte[ServerConfig.DataReadPacketSize];
+            StringBuilder builder = new StringBuilder();
+            while (stream.DataAvailable)
+            {
+                int bytes = stream.Read(data, 0, data.Length);
+                builder.Append(Encoding.Unicode.GetString(data, 0, bytes));
+            }
+
+            return builder.ToString();
+        }
+
+        private void ParseMessage(string message, out string command, out string[] args)
+        {
+            string[] query = message.Split(ServerConfig.CommandArgsSplitter);
+
+            args = null;
+            if (query.Length > 1)
+            {
+                args = new string[query.Length - 1];
+                for (int i = 0; i < args.Length; ++i)
+                    args[i] = query[i + 1];
+
+                command = query[0];
+            }
+            else if (query.Length > 0)
+                command = query[0];
+            else
+                command = message;
+        }
+
+        private void SendResponse(string response)
+        {
             try
             {
-                byte[] response = Encoding.Unicode.GetBytes("bb");
-                client.GetStream().Write(response, 0, response.Length);
+                byte[] responseBytes = Encoding.Unicode.GetBytes(response);
+                client.GetStream().Write(responseBytes, 0, responseBytes.Length);
             }
             catch (IOException)
             {
-                // client closed the connection
+                connected = false; // client closed the connection
             }
-
-            client.Dispose();
         }
     }
 }

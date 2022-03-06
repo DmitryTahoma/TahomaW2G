@@ -6,7 +6,12 @@ namespace ConsoleServer.Commands
     {
         public string ExecuteCommand(string commandName, string[] args)
         {
-            return "good";
+            if(int.TryParse(commandName, out int num))
+            {
+                return (num * num).ToString();
+            }
+
+            return "not a int number";
         }
     }
 }
