@@ -7,6 +7,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsoleServer", "ConsoleSer
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsolelClient", "ConsolelClient\ConsolelClient.csproj", "{447C6D92-3750-4D35-B5DF-36916A2C9DD1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServerCore", "ServerCore\ServerCore.csproj", "{B7510190-5325-47FF-BDD3-287427A239DC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClientCore", "ClientCore\ClientCore.csproj", "{E952006A-AC8A-4447-BA00-8EDE49E9CF1D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +25,14 @@ Global
 		{447C6D92-3750-4D35-B5DF-36916A2C9DD1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{447C6D92-3750-4D35-B5DF-36916A2C9DD1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{447C6D92-3750-4D35-B5DF-36916A2C9DD1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B7510190-5325-47FF-BDD3-287427A239DC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B7510190-5325-47FF-BDD3-287427A239DC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B7510190-5325-47FF-BDD3-287427A239DC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B7510190-5325-47FF-BDD3-287427A239DC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E952006A-AC8A-4447-BA00-8EDE49E9CF1D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E952006A-AC8A-4447-BA00-8EDE49E9CF1D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E952006A-AC8A-4447-BA00-8EDE49E9CF1D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E952006A-AC8A-4447-BA00-8EDE49E9CF1D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
