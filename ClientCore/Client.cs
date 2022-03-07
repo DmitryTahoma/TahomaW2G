@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -15,6 +16,11 @@ namespace ClientCore
         private readonly int port;
 
         private Thread listeningResponse;
+        private string streamString;
+
+        private Thread sendingRequest;
+        private string sendingData;
+        private readonly object sendingDataLocker;
 
         public event MessageHandler OnGettingMessage;
 
@@ -25,6 +31,11 @@ namespace ClientCore
             this.port = port;
 
             InitListeningThread();
+            streamString = string.Empty;
+
+            InitSendingThread();
+            sendingData = string.Empty;
+            sendingDataLocker = new object();
 
             Connected = false;
         }
@@ -41,15 +52,46 @@ namespace ClientCore
                 {
                     try
                     {
-                        string msg = ListeningResponse();
+                        if (!HaveResponseInStreamString())
+                        {
+                            ListeningResponse();
+                        }
+                        string response = GetResponse();
 
-                        if (msg != ClientConfig.CloseConnectionCommand)
-                            OnGettingMessage?.Invoke(msg);
+                        if (!string.IsNullOrEmpty(response))
+                        {
+                            if (IsInnerCommand(response))
+                                ExecuteInnerCommands(response);
+                            else
+                                OnGettingMessage?.Invoke(response);
+                        }
                     }
                     catch (Exception e)
                     {
                         Console.WriteLine(e.ToString());
                     }
+                }
+            });
+        }
+
+        private void InitSendingThread()
+        {
+            sendingRequest = new Thread(() =>
+            {
+                while(!string.IsNullOrEmpty(sendingData))
+                {
+                    if(!Connected)
+                    {
+                        while(!TryReconnect())
+                        {
+                            Thread.Sleep(ClientConfig.WaitServerConnectionDelay);
+                        }
+
+                        InitListeningThread();
+                        StartListenningResponse();
+                    }
+
+                    SendingData();
                 }
             });
         }
@@ -69,6 +111,21 @@ namespace ClientCore
             Connect();
         }
 
+        public bool TryReconnect()
+        {
+            try
+            {
+                Reconnect();
+                return true;
+            }
+            catch
+            {
+                client.Dispose();
+                Connected = false;
+                return false;
+            }
+        }
+
         public void StartListenningResponse()
         {
             if (Connected && !listeningResponse.IsAlive)
@@ -77,8 +134,16 @@ namespace ClientCore
 
         public void Send(string message)
         {
-            byte[] data = Encoding.Unicode.GetBytes(message);
-            client.GetStream().Write(data, 0, data.Length);
+            lock (sendingDataLocker)
+            {
+                sendingData += ClientConfig.StartMessagePart + message + ClientConfig.EndMessagePart;
+            }
+
+            if(!sendingRequest.IsAlive)
+            {
+                InitSendingThread();
+                sendingRequest.Start();
+            }
         }
 
         public void SendCommand(string command, string[] args)
@@ -94,7 +159,7 @@ namespace ClientCore
             Send(message);
         }
 
-        private string ListeningResponse()
+        private void ListeningResponse()
         {
             NetworkStream stream = client.GetStream();
             WaitData(stream);
@@ -108,9 +173,7 @@ namespace ClientCore
             }
             while (stream.DataAvailable);
 
-            string res = builder.ToString();
-            ExecuteInnerCommands(res);
-            return res;
+            streamString += builder.ToString();
         }
 
         private void WaitData(NetworkStream stream)
@@ -130,6 +193,66 @@ namespace ClientCore
         {
             if (command == ClientConfig.CloseConnectionCommand)
                 Reconnect();
+        }
+
+        private string GetResponse()
+        {
+            int indexStart = streamString.IndexOf(ClientConfig.StartMessagePart);
+            int indexEnd = streamString.IndexOf(ClientConfig.EndMessagePart);
+
+            if (indexStart >= 0 && indexEnd >= 0)
+            {
+                string res = streamString.Substring(indexStart + ClientConfig.StartMessagePart.Length, indexEnd - ClientConfig.EndMessagePart.Length + 1);
+
+                int newStart = indexEnd + ClientConfig.EndMessagePart.Length;
+                streamString = streamString.Substring(newStart, streamString.Length - newStart);
+
+                return res;
+            }
+            else
+            {
+                return string.Empty;
+            }
+        }
+
+        private bool IsInnerCommand(string message)
+        {
+            return message == ClientConfig.CloseConnectionCommand;
+        }
+
+        private bool HaveResponseInStreamString()
+        {
+            return streamString.IndexOf(ClientConfig.StartMessagePart) >= 0 && streamString.IndexOf(ClientConfig.EndMessagePart) >= 0;
+        }
+
+        private void WriteToClientStream(string message)
+        {
+            byte[] data = Encoding.Unicode.GetBytes(ClientConfig.StartMessagePart + message + ClientConfig.EndMessagePart);
+            client.GetStream().Write(data, 0, data.Length);
+        }
+
+        private void SendingData()
+        {
+            lock (sendingDataLocker)
+            {
+                try
+                {
+                    WriteToClientStream(sendingData);
+                    sendingData = string.Empty;
+                }
+                catch (IOException)
+                {
+                    Connected = false; // server closed the connection
+                }
+                catch (InvalidOperationException)
+                {
+                    Connected = false; // server closed the connection
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e.ToString());
+                }
+            }
         }
     }
 }

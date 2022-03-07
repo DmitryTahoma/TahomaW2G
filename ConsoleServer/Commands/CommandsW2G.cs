@@ -6,6 +6,10 @@ namespace ConsoleServer.Commands
     {
         public string ExecuteCommand(string commandName, string[] args)
         {
+            System.Console.WriteLine("Start do something");
+            System.Threading.Thread.Sleep(1000);
+            System.Console.WriteLine("End do something");
+
             if(int.TryParse(commandName, out int num))
             {
                 return (num * num).ToString();

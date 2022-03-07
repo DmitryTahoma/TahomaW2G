@@ -12,22 +12,33 @@ namespace ServerCore
         private readonly DateTime timeStart;
         private bool connected;
 
+        private string streamString;
+
         public ClientObject(TcpClient client, ICommands commands)
         {
             this.client = client;
             this.commands = commands;
             timeStart = DateTime.Now;
             connected = true;
+
+            streamString = string.Empty;
         }
 
-        public bool HaveMessage => client.GetStream().DataAvailable;
+        public bool HaveMessage => client.GetStream().DataAvailable || HaveMessageInStreamString();
 
-        public bool IsEnable => connected && (DateTime.Now - timeStart).TotalSeconds < ServerConfig.ClientSecondsLifetime;
+        public bool IsEnable => connected && ((DateTime.Now - timeStart).TotalSeconds < ServerConfig.ClientSecondsLifetime || HaveMessage);
 
         public void Update()
         {
             NetworkStream stream = client.GetStream();
-            string message = ReadData(stream);
+            ReadData(stream);
+            string message = GetMessage();
+
+            if(string.IsNullOrEmpty(message))
+            {
+                return;
+            }
+
             string response;
 
             if (commands != null)
@@ -62,7 +73,7 @@ namespace ServerCore
             client.Dispose();
         }
 
-        private string ReadData(NetworkStream stream)
+        private void ReadData(NetworkStream stream)
         {
             byte[] data = new byte[ServerConfig.DataReadPacketSize];
             StringBuilder builder = new StringBuilder();
@@ -72,7 +83,7 @@ namespace ServerCore
                 builder.Append(Encoding.Unicode.GetString(data, 0, bytes));
             }
 
-            return builder.ToString();
+            streamString += builder.ToString();
         }
 
         private void ParseMessage(string message, out string command, out string[] args)
@@ -98,13 +109,42 @@ namespace ServerCore
         {
             try
             {
-                byte[] responseBytes = Encoding.Unicode.GetBytes(response);
+                byte[] responseBytes = Encoding.Unicode.GetBytes(ServerConfig.StartMessagePart + response + ServerConfig.EndMessagePart);
                 client.GetStream().Write(responseBytes, 0, responseBytes.Length);
             }
             catch (IOException)
             {
                 connected = false; // client closed the connection
             }
+            catch (InvalidOperationException)
+            {
+                connected = false; // client closed the connection
+            }
+        }
+
+        private string GetMessage()
+        {
+            int indexStart = streamString.IndexOf(ServerConfig.StartMessagePart);
+            int indexEnd = streamString.IndexOf(ServerConfig.EndMessagePart);
+
+            if (indexStart >= 0 && indexEnd >= 0)
+            {
+                string res = streamString.Substring(indexStart + ServerConfig.StartMessagePart.Length, indexEnd - ServerConfig.EndMessagePart.Length + 1);
+
+                int newStart = indexEnd + ServerConfig.EndMessagePart.Length;
+                streamString = streamString.Substring(newStart, streamString.Length - newStart);
+
+                return res;
+            }
+            else
+            {
+                return string.Empty;
+            }
+        }
+
+        private bool HaveMessageInStreamString()
+        {
+            return streamString.IndexOf(ServerConfig.StartMessagePart) >= 0 && streamString.IndexOf(ServerConfig.EndMessagePart) >= 0;
         }
     }
 }
