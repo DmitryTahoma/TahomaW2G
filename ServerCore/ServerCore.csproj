@@ -47,5 +47,11 @@
     <Compile Include="Server.cs" />
     <Compile Include="ServerConfig.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Session\Session.csproj">
+      <Project>{8fa3fd2e-6478-4787-a8b4-2f14f3e74e1b}</Project>
+      <Name>Session</Name>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

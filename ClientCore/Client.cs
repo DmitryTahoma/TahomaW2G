@@ -1,4 +1,5 @@
-﻿using System;
+﻿using SessionLib;
+using System;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -14,12 +15,10 @@ namespace ClientCore
         private TcpClient client;
         private readonly IPAddress ip;
         private readonly int port;
+        public Session session;
 
         private Thread listeningResponse;
-        private string streamString;
-
         private Thread sendingRequest;
-        private string sendingData;
         private readonly object sendingDataLocker;
 
         public event MessageHandler OnGettingMessage;
@@ -29,12 +28,10 @@ namespace ClientCore
             client = new TcpClient();
             this.ip = ip;
             this.port = port;
+            session = new Session(0, (client.Client.RemoteEndPoint as IPEndPoint)?.Address);
 
             InitListeningThread();
-            streamString = string.Empty;
-
             InitSendingThread();
-            sendingData = string.Empty;
             sendingDataLocker = new object();
 
             Connected = false;
@@ -62,6 +59,8 @@ namespace ClientCore
                         {
                             if (IsInnerCommand(response))
                                 ExecuteInnerCommands(response);
+                            else if (!session.Accepted)
+                                AcceptSession(response);
                             else
                                 OnGettingMessage?.Invoke(response);
                         }
@@ -78,7 +77,7 @@ namespace ClientCore
         {
             sendingRequest = new Thread(() =>
             {
-                while(!string.IsNullOrEmpty(sendingData))
+                while(!string.IsNullOrEmpty(session.SendDataString))
                 {
                     if(!Connected)
                     {
@@ -100,12 +99,14 @@ namespace ClientCore
         {
             client.Connect(ip, port);
             Connected = true;
+            SendFirst(session.Id.ToString());
         }
 
         public void Reconnect()
         {
             client.Dispose();
             Connected = false;
+            session.Accepted = false;
 
             client = new TcpClient();
             Connect();
@@ -136,14 +137,20 @@ namespace ClientCore
         {
             lock (sendingDataLocker)
             {
-                sendingData += ClientConfig.StartMessagePart + message + ClientConfig.EndMessagePart;
+                session.SendDataString += ClientConfig.StartMessagePart + message + ClientConfig.EndMessagePart;
             }
 
-            if(!sendingRequest.IsAlive)
+            StartSending();
+        }
+
+        private void SendFirst(string message)
+        {
+            lock (sendingDataLocker)
             {
-                InitSendingThread();
-                sendingRequest.Start();
+                session.SendDataString = ClientConfig.StartMessagePart + message + ClientConfig.EndMessagePart + message;
             }
+
+            StartSending();
         }
 
         public void SendCommand(string command, string[] args)
@@ -173,7 +180,7 @@ namespace ClientCore
             }
             while (stream.DataAvailable);
 
-            streamString += builder.ToString();
+            session.StreamString += builder.ToString();
         }
 
         private void WaitData(NetworkStream stream)
@@ -197,15 +204,15 @@ namespace ClientCore
 
         private string GetResponse()
         {
-            int indexStart = streamString.IndexOf(ClientConfig.StartMessagePart);
-            int indexEnd = streamString.IndexOf(ClientConfig.EndMessagePart);
+            int indexStart = session.StreamString.IndexOf(ClientConfig.StartMessagePart);
+            int indexEnd = session.StreamString.IndexOf(ClientConfig.EndMessagePart);
 
             if (indexStart >= 0 && indexEnd >= 0)
             {
-                string res = streamString.Substring(indexStart + ClientConfig.StartMessagePart.Length, indexEnd - ClientConfig.EndMessagePart.Length + 1);
+                string res = session.StreamString.Substring(indexStart + ClientConfig.StartMessagePart.Length, indexEnd - ClientConfig.EndMessagePart.Length + 1);
 
                 int newStart = indexEnd + ClientConfig.EndMessagePart.Length;
-                streamString = streamString.Substring(newStart, streamString.Length - newStart);
+                session.StreamString = session.StreamString.Substring(newStart, session.StreamString.Length - newStart);
 
                 return res;
             }
@@ -222,12 +229,12 @@ namespace ClientCore
 
         private bool HaveResponseInStreamString()
         {
-            return streamString.IndexOf(ClientConfig.StartMessagePart) >= 0 && streamString.IndexOf(ClientConfig.EndMessagePart) >= 0;
+            return session.StreamString.IndexOf(ClientConfig.StartMessagePart) >= 0 && session.StreamString.IndexOf(ClientConfig.EndMessagePart) >= 0;
         }
 
         private void WriteToClientStream(string message)
         {
-            byte[] data = Encoding.Unicode.GetBytes(ClientConfig.StartMessagePart + message + ClientConfig.EndMessagePart);
+            byte[] data = Encoding.Unicode.GetBytes(message);
             client.GetStream().Write(data, 0, data.Length);
         }
 
@@ -237,8 +244,8 @@ namespace ClientCore
             {
                 try
                 {
-                    WriteToClientStream(sendingData);
-                    sendingData = string.Empty;
+                    WriteToClientStream(session.SendDataString);
+                    session.SendDataString = string.Empty;
                 }
                 catch (IOException)
                 {
@@ -252,6 +259,24 @@ namespace ClientCore
                 {
                     Console.WriteLine(e.ToString());
                 }
+            }
+        }
+
+        private void AcceptSession(string response)
+        {
+            if(long.TryParse(response, out long id))
+            {
+                session.Id = id;
+                session.Accepted = true;
+            }
+        }
+
+        private void StartSending()
+        {
+            if (!sendingRequest.IsAlive)
+            {
+                InitSendingThread();
+                sendingRequest.Start();
             }
         }
     }

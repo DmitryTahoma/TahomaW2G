@@ -1,5 +1,7 @@
-﻿using System;
+﻿using SessionLib;
+using System;
 using System.IO;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
@@ -9,24 +11,28 @@ namespace ServerCore
     {
         private readonly TcpClient client;
         private readonly ICommands commands;
-        private readonly DateTime timeStart;
         private bool connected;
 
-        private string streamString;
+        private Session session;
 
         public ClientObject(TcpClient client, ICommands commands)
         {
             this.client = client;
             this.commands = commands;
-            timeStart = DateTime.Now;
             connected = true;
 
-            streamString = string.Empty;
+            session = new Session();
+
+            TimeStart = DateTime.Now;
         }
 
         public bool HaveMessage => client.GetStream().DataAvailable || HaveMessageInStreamString();
 
-        public bool IsEnable => connected && ((DateTime.Now - timeStart).TotalSeconds < ServerConfig.ClientSecondsLifetime || HaveMessage);
+        public bool IsEnable => connected && ((DateTime.Now - TimeStart).TotalSeconds < ServerConfig.ClientSecondsLifetime || HaveMessage);
+
+        public IPAddress Ip => (client.Client.RemoteEndPoint as IPEndPoint)?.Address;
+
+        public DateTime TimeStart { private set; get; }
 
         public void Update()
         {
@@ -73,6 +79,24 @@ namespace ServerCore
             client.Dispose();
         }
 
+        public long GetAcceptSessionId()
+        {
+            NetworkStream stream = client.GetStream();
+            ReadData(stream);
+            string message = GetMessage();
+
+            if (long.TryParse(message, out long id))
+                return id;
+
+            return -1;
+        }
+
+        public void AcceptSession(Session session)
+        {
+            this.session = session;
+            SendResponse(this.session.Id.ToString());
+        }
+
         private void ReadData(NetworkStream stream)
         {
             byte[] data = new byte[ServerConfig.DataReadPacketSize];
@@ -83,7 +107,7 @@ namespace ServerCore
                 builder.Append(Encoding.Unicode.GetString(data, 0, bytes));
             }
 
-            streamString += builder.ToString();
+            session.StreamString += builder.ToString();
         }
 
         private void ParseMessage(string message, out string command, out string[] args)
@@ -124,15 +148,15 @@ namespace ServerCore
 
         private string GetMessage()
         {
-            int indexStart = streamString.IndexOf(ServerConfig.StartMessagePart);
-            int indexEnd = streamString.IndexOf(ServerConfig.EndMessagePart);
+            int indexStart = session.StreamString.IndexOf(ServerConfig.StartMessagePart);
+            int indexEnd = session.StreamString.IndexOf(ServerConfig.EndMessagePart);
 
             if (indexStart >= 0 && indexEnd >= 0)
             {
-                string res = streamString.Substring(indexStart + ServerConfig.StartMessagePart.Length, indexEnd - ServerConfig.EndMessagePart.Length + 1);
+                string res = session.StreamString.Substring(indexStart + ServerConfig.StartMessagePart.Length, indexEnd - ServerConfig.EndMessagePart.Length + 1);
 
                 int newStart = indexEnd + ServerConfig.EndMessagePart.Length;
-                streamString = streamString.Substring(newStart, streamString.Length - newStart);
+                session.StreamString = session.StreamString.Substring(newStart, session.StreamString.Length - newStart);
 
                 return res;
             }
@@ -144,7 +168,7 @@ namespace ServerCore
 
         private bool HaveMessageInStreamString()
         {
-            return streamString.IndexOf(ServerConfig.StartMessagePart) >= 0 && streamString.IndexOf(ServerConfig.EndMessagePart) >= 0;
+            return session.StreamString.IndexOf(ServerConfig.StartMessagePart) >= 0 && session.StreamString.IndexOf(ServerConfig.EndMessagePart) >= 0;
         }
     }
 }

@@ -55,6 +55,10 @@
       <Project>{b7510190-5325-47ff-bdd3-287427a239dc}</Project>
       <Name>ServerCore</Name>
     </ProjectReference>
+    <ProjectReference Include="..\Session\Session.csproj">
+      <Project>{8FA3FD2E-6478-4787-A8B4-2F14F3E74E1B}</Project>
+      <Name>Session</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

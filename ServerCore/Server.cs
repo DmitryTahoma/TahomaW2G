@@ -1,4 +1,5 @@
-﻿using System;
+﻿using SessionLib;
+using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
@@ -16,9 +17,10 @@ namespace ServerCore
         private readonly List<ClientObject> disconnectedClients;
         private readonly object newClientsLocker;
 
+        private readonly SessionBuilder sessionBuilder;
         private readonly ICommands commands;
 
-        public Server(ICommands commands, IPAddress ip, int port)
+        public Server(ICommands commands, IPAddress ip, int port, SessionBuilder sessionBuilder)
         {
             listener = new TcpListener(ip, port);
             this.ip = ip;
@@ -29,12 +31,13 @@ namespace ServerCore
             disconnectedClients = new List<ClientObject>();
             newClientsLocker = new object();
 
+            this.sessionBuilder = sessionBuilder;
             this.commands = commands;
 
             IsStarted = false;
         }
 
-        public Server(ICommands commands, string ip, int port) : this(commands, IPAddress.Parse(ip), port) { }
+        public Server(ICommands commands, string ip, int port, SessionBuilder sessionBuilder) : this(commands, IPAddress.Parse(ip), port, sessionBuilder) { }
 
         public bool IsStarted { private set; get; }
 
@@ -90,10 +93,50 @@ namespace ServerCore
 
         private void AddNewClients()
         {
+            List<ClientObject> acceptedClients = new List<ClientObject>();
+            List<ClientObject> notAcceptedClients = new List<ClientObject>();
+
             lock (newClientsLocker)
             {
-                clients.AddRange(newClients);
-                newClients.Clear();
+                DateTime now = DateTime.Now;
+
+                foreach(ClientObject client in newClients)
+                {
+                    if (client.HaveMessage)
+                    {
+                        long id = client.GetAcceptSessionId();
+                        if (id < 0)
+                        {
+                            notAcceptedClients.Add(client);
+                        }
+                        else
+                        {
+                            Session session = sessionBuilder.Create(id, client.Ip);
+                            client.AcceptSession(session);
+                            acceptedClients.Add(client);
+                        }
+                    }
+                    else if ((now - client.TimeStart).TotalSeconds > ServerConfig.WaitAcceptClientSeconds)
+                    {
+                        notAcceptedClients.Add(client);
+                    }
+                }
+
+                clients.AddRange(acceptedClients);
+            }
+
+            foreach(ClientObject client in notAcceptedClients)
+            {
+                client.CloseConnection();
+            }
+            notAcceptedClients.AddRange(acceptedClients);
+
+            lock(newClientsLocker)
+            {
+                foreach(ClientObject client in notAcceptedClients)
+                {
+                    newClients.Remove(client);
+                }
             }
         }
 
