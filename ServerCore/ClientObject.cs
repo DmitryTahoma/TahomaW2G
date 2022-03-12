@@ -1,4 +1,5 @@
 ﻿using SessionLib;
+using SessionLib.Messages;
 using System;
 using System.IO;
 using System.Net;
@@ -133,7 +134,7 @@ namespace ServerCore
         {
             try
             {
-                byte[] responseBytes = Encoding.Unicode.GetBytes(ServerConfig.StartMessagePart + response + ServerConfig.EndMessagePart);
+                byte[] responseBytes = Encoding.Unicode.GetBytes(MessageTags.StartMessagePart + response + MessageTags.EndMessagePart);
                 client.GetStream().Write(responseBytes, 0, responseBytes.Length);
             }
             catch (IOException)
@@ -148,16 +149,10 @@ namespace ServerCore
 
         private string GetMessage()
         {
-            int indexStart = session.StreamString.IndexOf(ServerConfig.StartMessagePart);
-            int indexEnd = session.StreamString.IndexOf(ServerConfig.EndMessagePart);
-
-            if (indexStart >= 0 && indexEnd >= 0)
+            if (MessageFormatter.HaveTaggedMessage(session.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart))
             {
-                string res = session.StreamString.Substring(indexStart + ServerConfig.StartMessagePart.Length, indexEnd - ServerConfig.EndMessagePart.Length + 1);
-
-                int newStart = indexEnd + ServerConfig.EndMessagePart.Length;
-                session.StreamString = session.StreamString.Substring(newStart, session.StreamString.Length - newStart);
-
+                string res = MessageFormatter.SubstringFromTags(session.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart);
+                session.StreamString = MessageFormatter.CutMessageFromTags(session.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart);
                 return res;
             }
             else
@@ -168,7 +163,7 @@ namespace ServerCore
 
         private bool HaveMessageInStreamString()
         {
-            return session.StreamString.IndexOf(ServerConfig.StartMessagePart) >= 0 && session.StreamString.IndexOf(ServerConfig.EndMessagePart) >= 0;
+            return MessageFormatter.HaveTaggedMessage(session.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart);
         }
     }
 }

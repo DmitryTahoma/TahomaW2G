@@ -1,4 +1,5 @@
 ﻿using SessionLib;
+using SessionLib.Messages;
 using System;
 using System.IO;
 using System.Net;
@@ -137,7 +138,7 @@ namespace ClientCore
         {
             lock (sendingDataLocker)
             {
-                session.SendDataString += ClientConfig.StartMessagePart + message + ClientConfig.EndMessagePart;
+                session.SendDataString += MessageTags.StartMessagePart + message + MessageTags.EndMessagePart;
             }
 
             StartSending();
@@ -147,7 +148,7 @@ namespace ClientCore
         {
             lock (sendingDataLocker)
             {
-                session.SendDataString = ClientConfig.StartMessagePart + message + ClientConfig.EndMessagePart + message;
+                session.SendDataString = MessageTags.StartMessagePart + message + MessageTags.EndMessagePart + message;
             }
 
             StartSending();
@@ -204,16 +205,10 @@ namespace ClientCore
 
         private string GetResponse()
         {
-            int indexStart = session.StreamString.IndexOf(ClientConfig.StartMessagePart);
-            int indexEnd = session.StreamString.IndexOf(ClientConfig.EndMessagePart);
-
-            if (indexStart >= 0 && indexEnd >= 0)
+            if (MessageFormatter.HaveTaggedMessage(session.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart))
             {
-                string res = session.StreamString.Substring(indexStart + ClientConfig.StartMessagePart.Length, indexEnd - ClientConfig.EndMessagePart.Length + 1);
-
-                int newStart = indexEnd + ClientConfig.EndMessagePart.Length;
-                session.StreamString = session.StreamString.Substring(newStart, session.StreamString.Length - newStart);
-
+                string res = MessageFormatter.SubstringFromTags(session.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart);
+                session.StreamString = MessageFormatter.CutMessageFromTags(session.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart);
                 return res;
             }
             else
@@ -229,7 +224,7 @@ namespace ClientCore
 
         private bool HaveResponseInStreamString()
         {
-            return session.StreamString.IndexOf(ClientConfig.StartMessagePart) >= 0 && session.StreamString.IndexOf(ClientConfig.EndMessagePart) >= 0;
+            return MessageFormatter.HaveTaggedMessage(session.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart);
         }
 
         private void WriteToClientStream(string message)
