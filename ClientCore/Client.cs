@@ -48,7 +48,6 @@ namespace ClientCore
                 {
                     try
                     {
-                        UpdateConnectionToServer();
                         if (!string.IsNullOrEmpty(session.SendDataString))
                             SendingData();
 
@@ -80,6 +79,7 @@ namespace ClientCore
                     {
                         Console.WriteLine(e.ToString());
                     }
+                    UpdateConnectionToServer();
                 }
             });
         }
