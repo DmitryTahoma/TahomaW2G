@@ -24,16 +24,16 @@ namespace ServerCore
 
             session = new Session();
 
-            TimeStart = DateTime.Now;
+            LastActivity = DateTime.Now;
         }
 
         public bool HaveMessage => client.GetStream().DataAvailable || HaveMessageInStreamString();
 
-        public bool IsEnable => connected && ((DateTime.Now - TimeStart).TotalSeconds < ServerConfig.ClientSecondsLifetime || HaveMessage);
+        public bool IsEnable => connected && ((DateTime.Now - LastActivity).TotalSeconds < ServerConfig.ClientSecondsLifetime || HaveMessage);
 
         public IPAddress Ip => (client.Client.RemoteEndPoint as IPEndPoint)?.Address;
 
-        public DateTime TimeStart { private set; get; }
+        public DateTime LastActivity { get; private set; }
 
         public void Update()
         {
@@ -46,15 +46,14 @@ namespace ServerCore
                 return;
             }
 
+            LastActivity = DateTime.Now;
             string response;
 
             if (commands != null)
             {
-                ParseMessage(message, out string command, out string[] args);
-
                 try
                 {
-                    response = commands.ExecuteCommand(command, args);
+                    response = commands.ExecuteCommand(message);
                 }
                 catch (Exception e)
                 {
@@ -94,6 +93,7 @@ namespace ServerCore
 
         public void AcceptSession(Session session)
         {
+            session.StreamString += this.session.StreamString;
             this.session = session;
             SendResponse(this.session.Id.ToString());
         }
@@ -109,25 +109,6 @@ namespace ServerCore
             }
 
             session.StreamString += builder.ToString();
-        }
-
-        private void ParseMessage(string message, out string command, out string[] args)
-        {
-            string[] query = message.Split(ServerConfig.CommandArgsSplitter);
-
-            args = null;
-            if (query.Length > 1)
-            {
-                args = new string[query.Length - 1];
-                for (int i = 0; i < args.Length; ++i)
-                    args[i] = query[i + 1];
-
-                command = query[0];
-            }
-            else if (query.Length > 0)
-                command = query[0];
-            else
-                command = message;
         }
 
         private void SendResponse(string response)

@@ -2,6 +2,6 @@
 {
     public interface ICommands
     {
-        string ExecuteCommand(string commandName, string[] args);
+        string ExecuteCommand(string message);
     }
 }

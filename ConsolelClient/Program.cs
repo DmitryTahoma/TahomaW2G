@@ -18,20 +18,23 @@ namespace ConsolelClient
             client.Connect();
             client.StartListenningResponse();
 
+            int i = 2;
             bool isJob = true;
             while (isJob)
             {
                 if (gettedRequest)
                 {
-                    Console.Write("Message: ");
-                    string message = Console.ReadLine();
-                    if (message.ToLower() == "stop send")
-                        isJob = false;
-                    else
-                    {
-                        client.Send(message);
+                    //Console.Write("Message: ");
+                    //string message = Console.ReadLine();
+                    //if (message.ToLower() == "stop send")
+                    //    isJob = false;
+                    //else
+                    //{
+                    Console.WriteLine("--- " + i.ToString());
+                        client.Push(i.ToString());
                         gettedRequest = false;
-                    }
+                    //}
+                    ++i;
                 }
                 else
                 {

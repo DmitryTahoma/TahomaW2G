@@ -116,7 +116,7 @@ namespace ServerCore
                             acceptedClients.Add(client);
                         }
                     }
-                    else if ((now - client.TimeStart).TotalSeconds > ServerConfig.WaitAcceptClientSeconds)
+                    else if ((now - client.LastActivity).TotalSeconds > ServerConfig.WaitAcceptClientSeconds)
                     {
                         notAcceptedClients.Add(client);
                     }

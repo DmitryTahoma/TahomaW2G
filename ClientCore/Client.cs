@@ -18,8 +18,7 @@ namespace ClientCore
         private readonly int port;
         public Session session;
 
-        private Thread listeningResponse;
-        private Thread sendingRequest;
+        private Thread clientThread;
         private readonly object sendingDataLocker;
 
         public event MessageHandler OnGettingMessage;
@@ -31,8 +30,7 @@ namespace ClientCore
             this.port = port;
             session = new Session(0, (client.Client.RemoteEndPoint as IPEndPoint)?.Address);
 
-            InitListeningThread();
-            InitSendingThread();
+            InitClientThread();
             sendingDataLocker = new object();
 
             Connected = false;
@@ -42,29 +40,41 @@ namespace ClientCore
 
         public bool Connected { private set; get; }
 
-        private void InitListeningThread()
+        private void InitClientThread()
         {
-            listeningResponse = new Thread(() =>
+            clientThread = new Thread(() =>
             {
                 while (Connected)
                 {
                     try
                     {
-                        if (!HaveResponseInStreamString())
-                        {
-                            ListeningResponse();
-                        }
-                        string response = GetResponse();
+                        UpdateConnectionToServer();
+                        if (!string.IsNullOrEmpty(session.SendDataString))
+                            SendingData();
 
-                        if (!string.IsNullOrEmpty(response))
+                        ListeningResponse();
+                        if (HaveResponseInStreamString())
                         {
-                            if (IsInnerCommand(response))
-                                ExecuteInnerCommands(response);
-                            else if (!session.Accepted)
-                                AcceptSession(response);
-                            else
-                                OnGettingMessage?.Invoke(response);
+                            string response = GetResponse();
+
+                            if (!string.IsNullOrEmpty(response))
+                            {
+                                if (IsInnerCommand(response))
+                                    ExecuteInnerCommands(response);
+                                else if (!session.Accepted)
+                                    AcceptSession(response);
+                                else
+                                    OnGettingMessage?.Invoke(response);
+                            }
                         }
+                    }
+                    catch (IOException)
+                    {
+                        Connected = false; // server closed the connection
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        Connected = false; // server closed the connection
                     }
                     catch (Exception e)
                     {
@@ -74,36 +84,36 @@ namespace ClientCore
             });
         }
 
-        private void InitSendingThread()
-        {
-            sendingRequest = new Thread(() =>
-            {
-                while(!string.IsNullOrEmpty(session.SendDataString))
-                {
-                    if(!Connected)
-                    {
-                        while(!TryReconnect())
-                        {
-                            Thread.Sleep(ClientConfig.WaitServerConnectionDelay);
-                        }
-
-                        InitListeningThread();
-                        StartListenningResponse();
-                    }
-
-                    SendingData();
-                }
-            });
-        }
-
         public void Connect()
         {
             client.Connect(ip, port);
             Connected = true;
-            SendFirst(session.Id.ToString());
+            PushFirst(session.Id.ToString());
         }
 
-        public void Reconnect()
+        public void StartListenningResponse()
+        {
+            if (!clientThread.IsAlive)
+                clientThread.Start();
+        }
+
+        public void Push(string message)
+        {
+            lock (sendingDataLocker)
+            {
+                session.SendDataString += MessageTags.StartMessagePart + message + MessageTags.EndMessagePart;
+            }
+        }
+
+        private void PushFirst(string message)
+        {
+            lock (sendingDataLocker)
+            {
+                session.SendDataString = MessageTags.StartMessagePart + message + MessageTags.EndMessagePart + session.SendDataString;
+            }
+        }
+
+        private void Reconnect()
         {
             client.Dispose();
             Connected = false;
@@ -113,7 +123,7 @@ namespace ClientCore
             Connect();
         }
 
-        public bool TryReconnect()
+        private bool TryReconnect()
         {
             try
             {
@@ -128,73 +138,19 @@ namespace ClientCore
             }
         }
 
-        public void StartListenningResponse()
-        {
-            if (Connected && !listeningResponse.IsAlive)
-                listeningResponse.Start();
-        }
-
-        public void Send(string message)
-        {
-            lock (sendingDataLocker)
-            {
-                session.SendDataString += MessageTags.StartMessagePart + message + MessageTags.EndMessagePart;
-            }
-
-            StartSending();
-        }
-
-        private void SendFirst(string message)
-        {
-            lock (sendingDataLocker)
-            {
-                session.SendDataString = MessageTags.StartMessagePart + message + MessageTags.EndMessagePart + message;
-            }
-
-            StartSending();
-        }
-
-        public void SendCommand(string command, string[] args)
-        {
-            if (args == null || args.Length == 0)
-                Send(command);
-
-            string message = command;
-
-            for (int i = 0; i < args.Length; ++i)
-                message += ClientConfig.CommandArgsSplitter + args[i];
-
-            Send(message);
-        }
-
         private void ListeningResponse()
         {
             NetworkStream stream = client.GetStream();
-            WaitData(stream);
 
             byte[] data = new byte[ClientConfig.DataReadPacketSize];
             StringBuilder builder = new StringBuilder();
-            do
+            while (stream.DataAvailable)
             {
                 int bytes = stream.Read(data, 0, data.Length);
                 builder.Append(Encoding.Unicode.GetString(data, 0, bytes));
             }
-            while (stream.DataAvailable);
 
             session.StreamString += builder.ToString();
-        }
-
-        private void WaitData(NetworkStream stream)
-        {
-            while (!stream.DataAvailable && Connected)
-            {
-                Thread.Sleep(ClientConfig.WaitDataDelay);
-            }
-
-            if (!Connected)
-            {
-                throw new Exception("Lost connection to the server");
-            }
         }
 
         private void ExecuteInnerCommands(string command)
@@ -237,42 +193,25 @@ namespace ClientCore
         {
             lock (sendingDataLocker)
             {
-                try
-                {
-                    WriteToClientStream(session.SendDataString);
-                    session.SendDataString = string.Empty;
-                }
-                catch (IOException)
-                {
-                    Connected = false; // server closed the connection
-                }
-                catch (InvalidOperationException)
-                {
-                    Connected = false; // server closed the connection
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e.ToString());
-                }
+                WriteToClientStream(session.SendDataString);
+                session.SendDataString = string.Empty;
             }
         }
 
         private void AcceptSession(string response)
         {
-            if(long.TryParse(response, out long id))
+            if (long.TryParse(response, out long id))
             {
                 session.Id = id;
                 session.Accepted = true;
             }
         }
 
-        private void StartSending()
+        private void UpdateConnectionToServer()
         {
-            if (!sendingRequest.IsAlive)
-            {
-                InitSendingThread();
-                sendingRequest.Start();
-            }
+            if (!Connected)
+                while (!TryReconnect())
+                    Thread.Sleep(ClientConfig.WaitServerConnectionDelay);
         }
     }
 }
