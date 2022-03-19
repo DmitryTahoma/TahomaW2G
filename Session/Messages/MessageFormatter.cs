@@ -36,5 +36,10 @@
 
             return msg.Substring(indexStart, length);
         }
+
+        public static string FormatFullMessage(string message)
+        {
+            return MessageTags.StartMessagePart + message + MessageTags.EndMessagePart;
+        }
     }
 }

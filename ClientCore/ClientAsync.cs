@@ -5,8 +5,10 @@ namespace ClientCore
 {
     public class ClientAsync : Client
     {
+        public ClientAsync(IPAddress ip, int port, long sessionId) : base(ip, port, sessionId) { }
         public ClientAsync(IPAddress ip, int port) : base(ip, port) { }
         public ClientAsync(string ip, int port) : base(ip, port) { }
+        public ClientAsync(string ip, int port, long sessionId) : base(ip, port, sessionId) { }
 
         public async void ConnectAsync()
         {

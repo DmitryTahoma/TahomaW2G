@@ -19,8 +19,9 @@ namespace ServerCore
 
         private readonly SessionBuilder sessionBuilder;
         private readonly ICommands commands;
+        private readonly ISessionList sessionList;
 
-        public Server(ICommands commands, IPAddress ip, int port, SessionBuilder sessionBuilder)
+        public Server(ICommands commands, IPAddress ip, int port, ISessionList sessions)
         {
             listener = new TcpListener(ip, port);
             this.ip = ip;
@@ -31,13 +32,14 @@ namespace ServerCore
             disconnectedClients = new List<ClientObject>();
             newClientsLocker = new object();
 
-            this.sessionBuilder = sessionBuilder;
+            sessionBuilder = new SessionBuilder(sessions);
             this.commands = commands;
+            sessionList = sessions;
 
             IsStarted = false;
         }
 
-        public Server(ICommands commands, string ip, int port, SessionBuilder sessionBuilder) : this(commands, IPAddress.Parse(ip), port, sessionBuilder) { }
+        public Server(ICommands commands, string ip, int port, ISessionList sessions) : this(commands, IPAddress.Parse(ip), port, sessions) { }
 
         public bool IsStarted { private set; get; }
 
@@ -60,7 +62,7 @@ namespace ServerCore
                     try
                     {
                         TcpClient client = listener.AcceptTcpClient();
-                        ClientObject clientObj = new ClientObject(client, commands);
+                        ClientObject clientObj = new ClientObject(client, commands, sessionList);
 
                         lock (newClientsLocker)
                         {
@@ -84,8 +86,12 @@ namespace ServerCore
         public void Update()
         {
             foreach (ClientObject client in clients)
+            {
                 if (client.HaveMessage)
                     client.Update();
+                if (client.HaveResponse)
+                    client.SendResponse();
+            }
 
             AddNewClients();
             RemoveDisconnectedClients();

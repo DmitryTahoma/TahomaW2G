@@ -14,20 +14,24 @@ namespace ServerCore
         private readonly ICommands commands;
         private bool connected;
 
-        private Session session;
+        private Session mySession;
+        private readonly ISessionList allSessions;
 
-        public ClientObject(TcpClient client, ICommands commands)
+        public ClientObject(TcpClient client, ICommands commands, ISessionList allSessions)
         {
             this.client = client;
             this.commands = commands;
             connected = true;
 
-            session = new Session();
+            mySession = new Session();
+            this.allSessions = allSessions;
 
             LastActivity = DateTime.Now;
         }
 
         public bool HaveMessage => client.GetStream().DataAvailable || HaveMessageInStreamString();
+
+        public bool HaveResponse => MessageFormatter.HaveTaggedMessage(mySession.SendDataString, MessageTags.StartMessagePart, MessageTags.EndMessagePart);
 
         public bool IsEnable => connected && ((DateTime.Now - LastActivity).TotalSeconds < ServerConfig.ClientSecondsLifetime || HaveMessage);
 
@@ -53,7 +57,7 @@ namespace ServerCore
             {
                 try
                 {
-                    response = commands.ExecuteCommand(message);
+                    response = commands.ExecuteCommand(message, allSessions, mySession);
                 }
                 catch (Exception e)
                 {
@@ -63,7 +67,7 @@ namespace ServerCore
             else
                 response = "Commands is null";
 
-            SendResponse(response);
+            SendResponse(MessageFormatter.FormatFullMessage(response));
 
             Console.WriteLine("----------------------------------------");
             Console.WriteLine("REQUEST: " + message);
@@ -71,11 +75,19 @@ namespace ServerCore
             Console.WriteLine("----------------------------------------");
         }
 
+        public void SendResponse()
+        {
+            if(SendResponse(mySession.SendDataString))
+            {
+                mySession.SendDataString = string.Empty;
+            }
+        }
+
         public void CloseConnection()
         {
             Console.WriteLine("Connect Close " + client.Client.RemoteEndPoint.ToString());
 
-            SendResponse(ServerConfig.CloseConnectionCommand);
+            SendResponse(MessageFormatter.FormatFullMessage(ServerConfig.CloseConnectionCommand));
             client.Dispose();
         }
 
@@ -93,9 +105,9 @@ namespace ServerCore
 
         public void AcceptSession(Session session)
         {
-            session.StreamString += this.session.StreamString;
-            this.session = session;
-            SendResponse(this.session.Id.ToString());
+            session.StreamString += mySession.StreamString;
+            mySession = session;
+            SendResponse(MessageFormatter.FormatFullMessage(mySession.Id.ToString()));
         }
 
         private void ReadData(NetworkStream stream)
@@ -108,15 +120,16 @@ namespace ServerCore
                 builder.Append(Encoding.Unicode.GetString(data, 0, bytes));
             }
 
-            session.StreamString += builder.ToString();
+            mySession.StreamString += builder.ToString();
         }
 
-        private void SendResponse(string response)
+        private bool SendResponse(string response)
         {
             try
             {
-                byte[] responseBytes = Encoding.Unicode.GetBytes(MessageTags.StartMessagePart + response + MessageTags.EndMessagePart);
+                byte[] responseBytes = Encoding.Unicode.GetBytes(response);
                 client.GetStream().Write(responseBytes, 0, responseBytes.Length);
+                return true;
             }
             catch (IOException)
             {
@@ -126,14 +139,15 @@ namespace ServerCore
             {
                 connected = false; // client closed the connection
             }
+            return false;
         }
 
         private string GetMessage()
         {
-            if (MessageFormatter.HaveTaggedMessage(session.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart))
+            if (MessageFormatter.HaveTaggedMessage(mySession.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart))
             {
-                string res = MessageFormatter.SubstringFromTags(session.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart);
-                session.StreamString = MessageFormatter.CutMessageFromTags(session.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart);
+                string res = MessageFormatter.SubstringFromTags(mySession.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart);
+                mySession.StreamString = MessageFormatter.CutMessageFromTags(mySession.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart);
                 return res;
             }
             else
@@ -144,7 +158,7 @@ namespace ServerCore
 
         private bool HaveMessageInStreamString()
         {
-            return MessageFormatter.HaveTaggedMessage(session.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart);
+            return MessageFormatter.HaveTaggedMessage(mySession.StreamString, MessageTags.StartMessagePart, MessageTags.EndMessagePart);
         }
     }
 }

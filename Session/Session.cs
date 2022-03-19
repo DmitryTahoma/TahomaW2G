@@ -11,6 +11,7 @@ namespace SessionLib
             Accepted = false;
             StreamString = string.Empty;
             SendDataString = string.Empty;
+            SessionInfo = null;
         }
 
         public Session(long id, IPAddress ip) : this()
@@ -28,5 +29,7 @@ namespace SessionLib
         public string StreamString { get; set; }
 
         public string SendDataString { get; set; }
+
+        public object SessionInfo { get; set; }
     }
 }

@@ -23,12 +23,12 @@ namespace ClientCore
 
         public event MessageHandler OnGettingMessage;
 
-        public Client(IPAddress ip, int port)
+        public Client(IPAddress ip, int port, long sessionId)
         {
             client = new TcpClient();
             this.ip = ip;
             this.port = port;
-            session = new Session(0, (client.Client.RemoteEndPoint as IPEndPoint)?.Address);
+            session = new Session(sessionId, (client.Client.RemoteEndPoint as IPEndPoint)?.Address);
 
             InitClientThread();
             sendingDataLocker = new object();
@@ -36,7 +36,11 @@ namespace ClientCore
             Connected = false;
         }
 
+        public Client(IPAddress ip, int port) : this(ip, port, 0) { }
+
         public Client(string ip, int port) : this(IPAddress.Parse(ip), port) { }
+
+        public Client(string ip, int port, long sessionId) : this(IPAddress.Parse(ip), port, sessionId) { }
 
         public bool Connected { private set; get; }
 
@@ -97,11 +101,16 @@ namespace ClientCore
                 clientThread.Start();
         }
 
+        public long GetSessionId()
+        {
+            return session.Id;
+        }
+
         public void Push(string message)
         {
             lock (sendingDataLocker)
             {
-                session.SendDataString += MessageTags.StartMessagePart + message + MessageTags.EndMessagePart;
+                session.SendDataString += MessageFormatter.FormatFullMessage(message);
             }
         }
 
@@ -109,7 +118,7 @@ namespace ClientCore
         {
             lock (sendingDataLocker)
             {
-                session.SendDataString = MessageTags.StartMessagePart + message + MessageTags.EndMessagePart + session.SendDataString;
+                session.SendDataString = MessageFormatter.FormatFullMessage(message) + session.SendDataString;
             }
         }
 
