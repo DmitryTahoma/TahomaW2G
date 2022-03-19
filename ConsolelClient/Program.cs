@@ -1,6 +1,5 @@
 ﻿using ClientCore;
 using System;
-using System.Threading;
 
 namespace ConsolelClient
 {
@@ -9,21 +8,20 @@ namespace ConsolelClient
         static void Main(string[] args)
         {
             ClientAsync client = new ClientAsync("192.168.0.168", 4210);
-            client.Connect();
+            client.ConnectAsync();
+            client.StartListenningResponseAsync();
+            client.OnGettingMessage += (response) => {
+                Console.WriteLine(response);
+            };
 
-            int i = 2;
             bool isJob = true;
             while (isJob)
             {
-                //Console.Write("Message: ");
-                //string message = Console.ReadLine();
-                //if (message.ToLower() == "stop send")
-                //    isJob = false;
-                //else
-                //{
-                Console.WriteLine(i.ToString() + "^2 = " + client.Send(i.ToString()).Result);
-                //}
-                ++i;
+                string message = Console.ReadLine();
+                if (message.ToLower() == "stop send")
+                    isJob = false;
+                else
+                    client.PushAsync(message);
             }
         }
     }

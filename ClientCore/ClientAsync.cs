@@ -1,60 +1,32 @@
-﻿using System;
+﻿using System.Net;
 using System.Threading.Tasks;
 
 namespace ClientCore
 {
-    public class ClientAsync
+    public class ClientAsync : Client
     {
-        private readonly Client client;
+        public ClientAsync(IPAddress ip, int port) : base(ip, port) { }
+        public ClientAsync(string ip, int port) : base(ip, port) { }
 
-        private bool isWaitResponse;
-        private string response;
-
-        public ClientAsync(string ip, int port)
-        {
-            client = new Client(ip, port);
-            client.OnGettingMessage += OnGettingMessage;
-
-            isWaitResponse = false;
-            response = string.Empty;
-        }
-
-        public async void Connect()
+        public async void ConnectAsync()
         {
             await Task.Run(() => {
-                client.Connect();
-                client.StartListenningResponse();
+                Connect();
             });
         }
 
-        public async Task<string> Send(string message)
+        public async void StartListenningResponseAsync()
         {
-            return await Task.Run(() => 
-            {
-                isWaitResponse = true;
-
-                while (isWaitResponse)
-                {
-                    DateTime startTime = DateTime.Now;
-                    client.Push(message);
-
-                    while (isWaitResponse && (DateTime.Now - startTime).TotalSeconds <= 3)
-                        Task.Delay(25);
-                }
-
-                string res = response;
-                response = string.Empty;
-                return res;
+            await Task.Run(() => {
+                StartListenningResponse();
             });
         }
 
-        private void OnGettingMessage(string response)
+        public async void PushAsync(string message)
         {
-            if(isWaitResponse)
-            {
-                this.response = response;
-                isWaitResponse = false;
-            }
+            await Task.Run(() => {
+                Push(message);
+            });
         }
     }
 }
